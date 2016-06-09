@@ -153,8 +153,8 @@ s8 BNO055_I2C_bus_read(u8 dev_addr, u8 reg_addr, u8 *reg_data, u8 cnt)
 	BNO055_iERROR = k_master_receive_interrupt_i2c(0, dev_addr);
 
 	/* save received FRTOS queue data */
-	for (stringpos = BNO055_INIT_VALUE; stringpos < cnt; stringpos++)
-		BNO055_iERROR = xQueueReceive(k_i2c->rx_queue, (reg_data + stringpos), portMAX_DELAY);
+	for (stringpos = BNO055_INIT_VALUE; stringpos < cnt; stringpos++, reg_data++)
+		BNO055_iERROR = xQueueReceive(k_i2c->rx_queue, reg_data, 10);
 	return (s8)BNO055_iERROR;
 }
 /*	Brief : The delay routine
