@@ -15,9 +15,11 @@
  * limitations under the License.
  */
 
-#define HTDU21D_ADDRESS 0x40  //Unshifted 7-bit I2C address for the sensor
+/* set device number from HAL here */
+#define HTDU21D_DEV_NUM 2
 
 #define HTU21D_RX_SIZE  3
+#define HTU21D_TX_SIZE  1
 
 #define TRIGGER_TEMP_MEASURE_HOLD  0xE3
 #define TRIGGER_HUMD_MEASURE_HOLD  0xE5
@@ -29,8 +31,5 @@
 
 double readHumidity(void);
 double readTemperature(void);
-void setResolution(uint8_t resBits);
-
-
-//static byte read_user_register(void);
-static uint8_t check_crc(uint16_t message_from_sensor, uint8_t check_value_from_sensor);
+void setResolution(uint8_t resolution);
+uint8_t read_user_register(void);

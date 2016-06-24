@@ -17,45 +17,30 @@
 
 #include "kubos-hal/I2C.h"
 #include "kubos-core/modules/sensors/htu21d/htu21d.h"
-#include "task.h"
 
-static uint8_t check_crc(uint16_t message_from_sensor, uint8_t check_value_from_sensor);
+#include "FreeRTOS.h"
+#include "task.h"
 
 double readHumidity()
 {
 	uint8_t I2Cptr;
-	KI2C *k_i2c = kprv_i2c_get(DEFAULT_I2C);
 	uint8_t array[HTU21D_RX_SIZE];
+	uint8_t* arrayp;
 
 	I2Cptr = TRIGGER_HUMD_MEASURE_NOHOLD;
 
 	/* transmit to sensor */
-	k_master_transmit_interrupt_i2c(DEFAULT_I2C, HTDU21D_ADDRESS, &I2Cptr, 1);
+	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
 
 	/* wait for computation */
 	vTaskDelay(55);
 
+	/* set array pointer */
+	arrayp = array;
 	/* get three uint8_ts, data(MSB) / data(LSB) / Checksum */
-	k_master_receive_interrupt_i2c(DEFAULT_I2C, HTDU21D_ADDRESS);
-
-	int i = 0;
-	uint8_t* p = array;
-
-	/* get data from I2C queue */
-	uint8_t test;
-	for (; i < HTU21D_RX_SIZE; i++, p++)
-	{
-		xQueueReceive(k_i2c->rx_queue, &test, 100);
-	}
+	k_master_receive_i2c(HTDU21D_DEV_NUM, arrayp, HTU21D_RX_SIZE);
 
 	unsigned int rawHumidity = ((unsigned int) array[0] << 8) | (unsigned int) array[1];
-
-	/*
-	if(check_crc(rawHumidity, array[2]) != 0)
-	{
-		return(-1); //Error out
-	}
-	*/
 
 	//sensorStatus = rawHumidity & 0x0003; //Grab only the right two bits
 	rawHumidity &= 0xFFFC; //Zero out the status bits but keep them in place
@@ -70,58 +55,64 @@ double readHumidity()
 double readTemperature()
 {
 	uint8_t I2Cptr;
-	KI2C *k_i2c = kprv_i2c_get(DEFAULT_I2C);
 	uint8_t array[HTU21D_RX_SIZE];
+	uint8_t* arrayp;
 
 	I2Cptr = TRIGGER_TEMP_MEASURE_NOHOLD;
 
 	/* transmit to sensor */
-	k_master_transmit_interrupt_i2c(DEFAULT_I2C, HTDU21D_ADDRESS, &I2Cptr, 1);
+	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
 
 	/* wait for computation */
 	vTaskDelay(55);
 
+	/* set array pointer */
+	arrayp = array;
 	/* get three uint8_ts, data(MSB) / data(LSB) / Checksum */
-	k_master_receive_interrupt_i2c(DEFAULT_I2C, HTDU21D_ADDRESS);
+	k_master_receive_i2c(HTDU21D_DEV_NUM, arrayp, HTU21D_RX_SIZE);
 
-	int i = 0;
-	uint8_t* p = array;
+	unsigned int rawTemperature = ((unsigned int) array[0] << 8)
+			| (unsigned int) array[1];
 
-	/* get data from I2C queue */
-	for (; i < HTU21D_RX_SIZE; i++, p++)
-		xQueueReceive(k_i2c->rx_queue, p, portMAX_DELAY);
-
-	unsigned int rawTemperature = ((unsigned int) array[0] << 8) | (unsigned int) array[1];
-
-	if(check_crc(rawTemperature, array[2]) != 0) return(-1); //Error out
-
-		//sensorStatus = rawTemperature & 0x0003; //Grab only the right two bits
+	//sensorStatus = rawTemperature & 0x0003; //Grab only the right two bits
 	rawTemperature &= 0xFFFC; //Zero out the status bits but keep them in place
 
-		//Given the raw temperature data, calculate the actual temperature
-	double tempTemperature = rawTemperature / (double)65536; //2^16 = 65536
-	double realTemperature = (double)(-46.85 + (175.72 * tempTemperature)); //From page 14
+	//Given the raw temperature data, calculate the actual temperature
+	double tempTemperature = rawTemperature / (double) 65536; //2^16 = 65536
+	double realTemperature = (double) (-46.85 + (175.72 * tempTemperature)); //From page 14
 
-	return(realTemperature);
+	return (realTemperature);
 }
 
-#define SHIFTED_DIVISOR 0x988000
-static uint8_t check_crc(uint16_t message_from_sensor, uint8_t check_value_from_sensor)
+void setResolution(uint8_t resolution)
 {
-	uint32_t remainder = (uint32_t)message_from_sensor << 8; //Pad with 8 bits because we have to add in the check value
-	remainder |= check_value_from_sensor; //Add on the check value
+	uint8_t userRegister = read_user_register(); //Go get the current register state
+	uint8_t I2Cptr;
+	userRegister &= 0x7E; //Turn off the resolution bits B01111110 = 0x7E
+	resolution &= 0x81; //Turn off all other bits but resolution bits B10000001 = 0x81
+	userRegister |= resolution; //Mask in the requested resolution bits
 
-	uint32_t divsor = (uint32_t)SHIFTED_DIVISOR;
+	/* set value */
+	I2Cptr = WRITE_USER_REG;
 
-	int i = 0;
-	for (; i < 16 ; i++) //Operate on only 16 positions of max 24. The remaining 8 are our remainder and should be zero when we're done.
-	{
+	/* transmit to sensor */
+	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
+	k_master_transmit_i2c(HTDU21D_DEV_NUM, &userRegister, HTU21D_TX_SIZE);
+}
 
-	if( remainder & (uint32_t)1<<(23 - i) ) //Check if there is a one in the left position
-		remainder ^= divsor;
+//Read the user register
+uint8_t read_user_register(void)
+{
+	uint8_t I2Cptr;
+	uint8_t userRegister;
 
-	    divsor >>= 1; //Rotate the divsor max 16 times so that we have 8 bits left of a remainder
-	}
+	/* set value */
+	I2Cptr = READ_USER_REG;
 
-	return (uint8_t)remainder;
+	/* transmit to sensor */
+	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
+	/* receive result */
+	k_master_receive_i2c(HTDU21D_DEV_NUM, &userRegister, HTU21D_RX_SIZE);
+
+	return (userRegister);
 }
