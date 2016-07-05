@@ -1,4 +1,11 @@
 /*
+ HTU21D Humidity Sensor Library
+ By: Nathan Seidle
+ SparkFun Electronics
+ Date: September 22nd, 2013
+ License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+*/
+/*
  * KubOS Core Flight Services
  * Copyright (C) 2015 Kubos Corporation
  *
@@ -15,7 +22,6 @@
  * limitations under the License.
  */
 
-#include "kubos-hal/I2C.h"
 #include "kubos-core/modules/sensors/htu21d/htu21d.h"
 
 #include "FreeRTOS.h"
@@ -30,7 +36,7 @@ double readHumidity()
 	I2Cptr = TRIGGER_HUMD_MEASURE_NOHOLD;
 
 	/* transmit to sensor */
-	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
+	k_i2c_write(HTU21D_DEV_NUM, HTU21D_ADDR, &I2Cptr, HTU21D_TX_SIZE);
 
 	/* wait for computation */
 	vTaskDelay(55);
@@ -38,7 +44,7 @@ double readHumidity()
 	/* set array pointer */
 	arrayp = array;
 	/* get three uint8_ts, data(MSB) / data(LSB) / Checksum */
-	k_master_receive_i2c(HTDU21D_DEV_NUM, arrayp, HTU21D_RX_SIZE);
+	k_i2c_read(HTU21D_DEV_NUM, HTU21D_ADDR, arrayp, HTU21D_RX_SIZE);
 
 	unsigned int rawHumidity = ((unsigned int) array[0] << 8) | (unsigned int) array[1];
 
@@ -61,7 +67,7 @@ double readTemperature()
 	I2Cptr = TRIGGER_TEMP_MEASURE_NOHOLD;
 
 	/* transmit to sensor */
-	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
+	k_i2c_write(HTU21D_DEV_NUM, HTU21D_ADDR, &I2Cptr, HTU21D_TX_SIZE);
 
 	/* wait for computation */
 	vTaskDelay(55);
@@ -69,7 +75,7 @@ double readTemperature()
 	/* set array pointer */
 	arrayp = array;
 	/* get three uint8_ts, data(MSB) / data(LSB) / Checksum */
-	k_master_receive_i2c(HTDU21D_DEV_NUM, arrayp, HTU21D_RX_SIZE);
+	k_i2c_read(HTU21D_DEV_NUM, HTU21D_ADDR, arrayp, HTU21D_RX_SIZE);
 
 	unsigned int rawTemperature = ((unsigned int) array[0] << 8)
 			| (unsigned int) array[1];
@@ -96,8 +102,8 @@ void setResolution(uint8_t resolution)
 	I2Cptr = WRITE_USER_REG;
 
 	/* transmit to sensor */
-	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
-	k_master_transmit_i2c(HTDU21D_DEV_NUM, &userRegister, HTU21D_TX_SIZE);
+	k_i2c_write(HTU21D_DEV_NUM, HTU21D_ADDR, &I2Cptr, HTU21D_TX_SIZE);
+	k_i2c_read(HTU21D_DEV_NUM, HTU21D_ADDR, &userRegister, HTU21D_TX_SIZE);
 }
 
 //Read the user register
@@ -110,9 +116,9 @@ uint8_t read_user_register(void)
 	I2Cptr = READ_USER_REG;
 
 	/* transmit to sensor */
-	k_master_transmit_i2c(HTDU21D_DEV_NUM, &I2Cptr, HTU21D_TX_SIZE);
+	k_i2c_write(HTU21D_DEV_NUM, HTU21D_ADDR, &I2Cptr, HTU21D_TX_SIZE);
 	/* receive result */
-	k_master_receive_i2c(HTDU21D_DEV_NUM, &userRegister, HTU21D_RX_SIZE);
+	k_i2c_read(HTU21D_DEV_NUM, HTU21D_ADDR, &userRegister, HTU21D_RX_SIZE);
 
 	return (userRegister);
 }

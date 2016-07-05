@@ -34,66 +34,108 @@
  */
 
 #include "kubos-core/modules/sensors/bno055/bno055.h"
-#include "kubos-hal/I2C.h"
 
 #include "FreeRTOS.h"
 #include "task.h"
 
 /* private functions */
 static uint8_t readByte(bno055_reg_t reg);
-static int readLen(bno055_reg_t reg, uint8_t* buffer, uint8_t len);
-static int writeByte( bno055_reg_t reg, uint8_t value);
+static KI2CStatus readLen(bno055_reg_t reg, uint8_t* buffer, uint8_t len);
+static KI2CStatus writeByte( bno055_reg_t reg, uint8_t value);
 
 /* static globals */
 static bno055_opmode_t _mode;
+static uint8_t _bus_num;
 
-int bno055_init(bno055_opmode_t mode)
+KI2CStatus bno055_init(uint8_t bus, bno055_opmode_t mode)
 {
+	/* set bus num for i2c */
+	_bus_num = bus;
+	/* set global mode */
+	_mode = mode;
+	/* return variable */
+	KI2CStatus ret = I2C_ERROR;
+
+	/* hard reset */
+	if((ret = writeByte(BNO055_SYS_TRIGGER_ADDR, 0x20)) != I2C_OK)
+	{
+	    return ret; /* error */
+	}
+	/* wait for boot */
+	vTaskDelay(1000);
+
+    /* id of IMU */
+    uint8_t id = readByte(BNO055_CHIP_ID_ADDR);
+
 	/* Make sure we have the right device */
-	uint8_t id = readByte(BNO055_CHIP_ID_ADDR);
-
-	if (id != BNO055_ID) {
-		/* wait for boot-up */
-		vTaskDelay(1000);
-		id = readByte(BNO055_CHIP_ID_ADDR);
-		if (id != BNO055_ID)
-			return -1; /* leave */
+	if(id != BNO055_ID)
+	{
+	    /* if not working, error out */
+	    return I2C_ERROR;
 	}
-
-	/* Switch to config mode (just in case since this is the default) */
-	setMode(OPERATION_MODE_CONFIG);
-
-	/* Reset */
-	writeByte(BNO055_SYS_TRIGGER_ADDR, 0x20);
-
-	/* wait until finished resetting */
-	while (readByte(BNO055_CHIP_ID_ADDR) != BNO055_ID) {
-		vTaskDelay(10);
-	}
-	vTaskDelay(50);
 
 	/* Set to normal power mode */
-	writeByte(BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL);
+	if((ret = writeByte(BNO055_PWR_MODE_ADDR, POWER_MODE_NORMAL)) != I2C_OK)
+	{
+	    return ret; /* error */
+	}
 	vTaskDelay(10);
 
-	writeByte(BNO055_PAGE_ID_ADDR, 0);
-	writeByte(BNO055_SYS_TRIGGER_ADDR, 0x0);
+	if((ret = writeByte(BNO055_PAGE_ID_ADDR, 0)) != I2C_OK)
+	{
+	    return ret;
+	}
+
+	/* Set the output units */
+	uint8_t unitsel = (0 << 7) | // Orientation = Android
+	        (0 << 4) | // Temperature = Celsius
+	        (0 << 2) | // Euler = Degrees
+	        (1 << 1) | // Gyro = Rads
+	        (0 << 0);  // Accelerometer = m/s^2
+	if((ret = writeByte(BNO055_UNIT_SEL_ADDR, unitsel)) != I2C_OK)
+	{
+	    return ret; /* error */
+	}
+
+	/* Configure axis mapping (see section 3.4) */
+	if((ret = writeByte(BNO055_AXIS_MAP_CONFIG_ADDR, REMAP_CONFIG_P2)) != I2C_OK) // P0-P7, Default is P1
+	{
+	    return ret; /* error */
+	}
+	vTaskDelay(10);
+	if((ret = writeByte(BNO055_AXIS_MAP_SIGN_ADDR, REMAP_SIGN_P2)) != I2C_OK) // P0-P7, Default is P1
+	{
+	    return ret; /* error */
+	}
+	vTaskDelay(10);
+
+	if((ret = writeByte(BNO055_SYS_TRIGGER_ADDR, 0x0)) != I2C_OK)
+	{
+	    return ret;
+	}
 	vTaskDelay(10);
 
 	/* Set the requested operating mode */
-	setMode(mode);
+	if ((ret = setMode(mode)) != I2C_OK)
+	{
+	    return ret;
+	}
 	vTaskDelay(20);
 
 	/* success */
-	return 0;
+	return ret;
 }
 
 
-void setMode(bno055_opmode_t mode)
+KI2CStatus setMode(bno055_opmode_t mode)
 {
+    /* return variable */
+    KI2CStatus ret = I2C_ERROR;
 	_mode = mode;
-	writeByte(BNO055_OPR_MODE_ADDR, _mode);
+	ret = writeByte(BNO055_OPR_MODE_ADDR, _mode);
 	vTaskDelay(30);
+
+	return ret;
 }
 
 
@@ -105,7 +147,7 @@ void setExtCrystalUse(int use)
 	setMode(OPERATION_MODE_CONFIG);
 	vTaskDelay(25);
 	writeByte(BNO055_PAGE_ID_ADDR, 0);
-	if (use) {
+	if (use == EXT_CRYSTAL) {
 		/* extern */
 		writeByte(BNO055_SYS_TRIGGER_ADDR, 0x80);
 	} else {
@@ -208,7 +250,7 @@ void getCalibration(uint8_t* sys, uint8_t* gyro, uint8_t* accel, uint8_t* mag)
 
 int8_t getTemp(void)
 {
-  int8_t temp = (int8_t)(readByte(BNO055_TEMP_ADDR));
+  int8_t temp = readByte(BNO055_TEMP_ADDR);
   return temp;
 }
 
@@ -263,7 +305,7 @@ void getData(vector_type_t type, double* vector)
 	}
 }
 
-void getQuat(double *vector)
+void getQuat(volatile double *vector)
 {
 	/* data buffer */
 	uint8_t buffer[8];
@@ -289,7 +331,7 @@ void getQuat(double *vector)
 
 int getSensorOffsetBytes(uint8_t* calibData)
 {
-	if (isFullyCalibrated()) {
+	if (isFullyCalibrated() == I2C_OK) {
 		bno055_opmode_t lastMode = _mode;
 		setMode(OPERATION_MODE_CONFIG);
 
@@ -300,12 +342,12 @@ int getSensorOffsetBytes(uint8_t* calibData)
 		return 0;
 	}
 	/* not calibrated */
-	return -1;
+	return I2C_ERROR;
 }
 
 int getSensorOffsetStruct(bno055_offsets_t offsets_type)
 {
-    if (isFullyCalibrated())
+    if (isFullyCalibrated() == I2C_OK)
     {
         bno055_opmode_t lastMode = _mode;
         setMode(OPERATION_MODE_CONFIG);
@@ -327,10 +369,10 @@ int getSensorOffsetStruct(bno055_offsets_t offsets_type)
         offsets_type.mag_radius = (readByte(MAG_RADIUS_MSB_ADDR) << 8) | (readByte(MAG_RADIUS_LSB_ADDR));
 
         setMode(lastMode);
-        return 0;
+        return I2C_OK;
     }
     /* not calibrated */
-    return -1;
+    return I2C_ERROR;
 }
 
 void setSensorOffsetBytes(const uint8_t* calibData)
@@ -407,13 +449,13 @@ void setSensorOffsetStruct(bno055_offsets_t offsets_type)
 	setMode(lastMode);
 }
 
-int isFullyCalibrated(void)
+KI2CStatus isFullyCalibrated(void)
 {
     uint8_t system, gyro, accel, mag;
     getCalibration(&system, &gyro, &accel, &mag);
     if (system < 3 || gyro < 3 || accel < 3 || mag < 3)
-        return 1; /* 1 for success here */
-    return 0;
+        return I2C_OK; /* success */
+    return I2C_ERROR;
 }
 
 
@@ -421,39 +463,49 @@ int isFullyCalibrated(void)
 static uint8_t readByte(bno055_reg_t reg)
 {
 	/* value */
-	uint8_t* value = 0;
+	uint8_t value = 0;
+	/* status val */
+	KI2CStatus ret = I2C_ERROR;
 
 	/* transmit reg */
-	k_master_transmit_i2c(BNO055_DEV_NUM, (uint8_t*)&reg, 1);
-	/* receive value */
-	k_master_receive_i2c(BNO055_DEV_NUM, value, 1);
+	if((ret = k_i2c_write(_bus_num, BNO055_ADDRESS_A, (uint8_t*)&reg, 1)) != I2C_OK)
+	{
+	    return (uint8_t)ret; /* error */
+	}
 
-	/* return data in value ptr */
-	return *value;
+	/* receive value */
+	if((ret = k_i2c_read(_bus_num, BNO055_ADDRESS_A, &value, 1)) != I2C_OK)
+	{
+	    return (uint8_t)ret; /* error */
+	}
+
+	/* return data in value ptr if OK */
+	return value;
 }
 
-static int readLen(bno055_reg_t reg, uint8_t* buffer, uint8_t len)
+static KI2CStatus readLen(bno055_reg_t reg, uint8_t* buffer, uint8_t len)
 {
 	/* status val */
-	int ret = -1;
+    KI2CStatus ret = I2C_ERROR;
 
 	/* transmit reg */
-	ret = k_master_transmit_i2c(BNO055_DEV_NUM, (uint8_t*)&reg, 1);
+	ret = k_i2c_write(_bus_num, BNO055_ADDRESS_A, (uint8_t*)&reg, 1);
+
 	/* receive array */
-	ret = k_master_receive_i2c(BNO055_DEV_NUM, buffer, len);
+	ret = k_i2c_read(_bus_num, BNO055_ADDRESS_A, buffer, len);
 
 	/* return status */
 	return ret;
 }
 
-static int writeByte(bno055_reg_t reg, uint8_t value)
+static KI2CStatus writeByte(bno055_reg_t reg, uint8_t value)
 {
 	/* status val */
-	int ret = 0;
+    KI2CStatus ret = I2C_ERROR;
 
 	/* transmit reg and value */
-	ret = k_master_transmit_i2c(BNO055_DEV_NUM, (uint8_t*)&reg, 1);
-	ret = k_master_transmit_i2c(BNO055_DEV_NUM, &value, 1);
+	ret = k_i2c_write(_bus_num, BNO055_ADDRESS_A, (uint8_t*)&reg, 1);
+	ret = k_i2c_write(_bus_num, BNO055_ADDRESS_A, &value, 1);
 
 	return ret;
 }

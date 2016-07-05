@@ -1,4 +1,11 @@
 /*
+ HTU21D Humidity Sensor Library
+ By: Nathan Seidle
+ SparkFun Electronics
+ Date: September 22nd, 2013
+ License: This code is public domain but you buy me a beer if you use this and we meet someday (Beerware license).
+*/
+/*
  * KubOS Core Flight Services
  * Copyright (C) 2015 Kubos Corporation
  *
@@ -15,8 +22,11 @@
  * limitations under the License.
  */
 
+#include "kubos-hal/i2c.h"
+
 /* set device number from HAL here */
-#define HTDU21D_DEV_NUM 2
+#define HTU21D_DEV_NUM DEFAULT_I2C
+#define HTU21D_ADDR 0x40
 
 #define HTU21D_RX_SIZE  3
 #define HTU21D_TX_SIZE  1

@@ -34,13 +34,16 @@
  */
 
 #include <stdint.h>
+#include "kubos-hal/i2c.h"
 
-#define BNO055_DEV_NUM 1
 #define BNO055_ADDRESS_A (0x28)
-#define BNO055_ADDRESS_B (0x29)
 #define BNO055_ID (0xA0)
 
 #define NUM_BNO055_OFFSET_REGISTERS (22)
+
+/* define for crystal */
+#define EXT_CRYSTAL 1
+#define NO_CRYSTAL 0
 
 typedef enum
 {
@@ -269,8 +272,8 @@ typedef enum
 } vector_type_t;
 
 /* config functions */
-int bno055_init(bno055_opmode_t mode);
-void setMode(bno055_opmode_t mode);
+KI2CStatus bno055_init(uint8_t bus, bno055_opmode_t mode);
+KI2CStatus setMode(bno055_opmode_t mode);
 void getRevInfo(bno055_rev_info_t*);
 void displayRevInfo(void);
 void setExtCrystalUse(int use);
@@ -280,7 +283,7 @@ void getCalibration( uint8_t* system, uint8_t* gyro, uint8_t* accel, uint8_t* ma
 
 /* data functions */
 void getData(vector_type_t type, double* vector);
-void getQuat(double* vector);
+void getQuat(volatile double* vector);
 int8_t getTemp(void);
 
 /* Functions to deal with raw calibration data */
@@ -288,7 +291,7 @@ int getSensorOffsetBytes(uint8_t* calibData);
 int getSensorOffsetStruct(bno055_offsets_t offsets_type);
 void setSensorOffsetBytes(const uint8_t* calibData);
 void setSensorOffsetStruct(const bno055_offsets_t offsets_type);
-int isFullyCalibrated(void);
+KI2CStatus isFullyCalibrated(void);
 
 /* private functions */
 //static uint8_t readByte(bno055_reg_t reg);
