@@ -33,6 +33,8 @@
  * limitations under the License.
  */
 
+#ifdef YOTTA_CFG_SENSORS_BNO055
+
 #include "kubos-core/modules/sensors/bno055.h"
 
 #include "FreeRTOS.h"
@@ -87,7 +89,7 @@ KI2CStatus bno055_init(uint8_t bus, bno055_opmode_t mode)
 	}
 
 	/* Set the output units */
-	uint8_t unitsel = (0 << 7) | // Orientation = Android
+	uint8_t unitsel = (0 << 7) | // Orientation = Android (unix)
 	        (0 << 4) | // Temperature = Celsius
 	        (0 << 2) | // Euler = Degrees
 	        (1 << 1) | // Gyro = Rads
@@ -529,3 +531,5 @@ static KI2CStatus write_byte(bno055_reg_t reg, uint8_t value)
 
 	return ret;
 }
+
+#endif

@@ -33,6 +33,10 @@
  * limitations under the License.
  */
 
+#ifdef YOTTA_CFG_SENSORS_BNO055
+#ifndef BNO055_H
+#define BNO055_H
+
 #include <stdint.h>
 #include "kubos-hal/i2c.h"
 
@@ -296,7 +300,5 @@ void set_sensor_offset_bytes(const uint8_t* calibData);
 void set_sensor_offset_struct(const bno055_offsets_t offsets_type);
 KI2CStatus is_fully_calibrated(void);
 
-/* private functions */
-//static uint8_t readByte(bno055_reg_t reg);
-//static int readLen(bno055_reg_t reg, uint8_t* buffer, uint8_t len);
-//static int writeByte(bno055_reg_t reg, uint8_t value);
+#endif
+#endif
