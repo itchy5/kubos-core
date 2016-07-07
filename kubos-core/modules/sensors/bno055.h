@@ -273,25 +273,28 @@ typedef enum
 
 /* config functions */
 KI2CStatus bno055_init(uint8_t bus, bno055_opmode_t mode);
-KI2CStatus setMode(bno055_opmode_t mode);
-void getRevInfo(bno055_rev_info_t*);
-void displayRevInfo(void);
-void setExtCrystalUse(int use);
-void getSystemStatus(uint8_t *system_status, uint8_t *self_test_result, uint8_t *system_error);
-void displaySystemStatus(void);
-void getCalibration( uint8_t* system, uint8_t* gyro, uint8_t* accel, uint8_t* mag);
+KI2CStatus set_mode(bno055_opmode_t mode);
+uint8_t get_mode(void);
+
+void get_rev_info(bno055_rev_info_t*);
+void display_rev_info(void);
+void set_ext_crystal_use(int use);
+void get_system_status(uint8_t *system_status, uint8_t *self_test_result, uint8_t *system_error);
+void display_system_status(void);
+void get_calibration( uint8_t* system, uint8_t* gyro, uint8_t* accel, uint8_t* mag);
 
 /* data functions */
-void getData(vector_type_t type, double* vector);
-void getQuat(volatile double* vector);
-int8_t getTemp(void);
+uint8_t get_single_data(bno055_reg_t reg);
+void get_data_vector(vector_type_t type, double* vector);
+void get_position(double* vector);
+int8_t get_bno055_temperature(void);
 
 /* Functions to deal with raw calibration data */
-int getSensorOffsetBytes(uint8_t* calibData);
-int getSensorOffsetStruct(bno055_offsets_t offsets_type);
-void setSensorOffsetBytes(const uint8_t* calibData);
-void setSensorOffsetStruct(const bno055_offsets_t offsets_type);
-KI2CStatus isFullyCalibrated(void);
+int get_sensor_offset_bytes(uint8_t* calibData);
+int get_sensor_offset_struct(bno055_offsets_t offsets_type);
+void set_sensor_offset_bytes(const uint8_t* calibData);
+void set_sensor_offset_struct(const bno055_offsets_t offsets_type);
+KI2CStatus is_fully_calibrated(void);
 
 /* private functions */
 //static uint8_t readByte(bno055_reg_t reg);
