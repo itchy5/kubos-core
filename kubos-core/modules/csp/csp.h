@@ -40,7 +40,8 @@
  *      "interface":"if_kiss"
  *    },
  *  "usart_bus": "K_UART6",
- *  "max_msg_size":"32"
+ *  "max_msg_size":"32",
+ *  "max_msg_waiting":"10"
  *  }
  *}
  *

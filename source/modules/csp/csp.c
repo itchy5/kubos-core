@@ -29,6 +29,7 @@
 #include <csp/arch/csp_thread.h>
 
 #include "kubos-core/modules/csp/csp.h"
+#include "kubos-hal/gpio.h"
 
 /* static CSP interfaces */
 static csp_iface_t csp_if_kiss;
@@ -37,30 +38,45 @@ static csp_kiss_handle_t csp_kiss_driver;
 static xQueueHandle receive_queue;
 static xQueueHandle send_queue;
 
+#define BLINK_MS 100
+static inline void blink(int pin)
+{
+    k_gpio_write(pin, 1);
+    vTaskDelay(BLINK_MS / portTICK_RATE_MS);
+    k_gpio_write(pin, 0);
+}
+
 CSP_DEFINE_TASK(task_csp_send)
 {
-    csp_packet_t * packet;
+    csp_packet_t * packet = NULL;
     csp_conn_t * conn;
     portBASE_TYPE status;
     char msg[YOTTA_CFG_CSP_MAX_MSG_SIZE]; /* static msg */
 
-    while (1) {
+    while (1)
+    {
         /* get msg from send queue */
         status = xQueueReceive(send_queue, msg, portMAX_DELAY);
-        if (status != pdTRUE) {
+        if (status != pdTRUE)
+        {
             continue;
         }
 
         /* Get packet buffer for data */
-        packet = csp_buffer_get(100);
-        if (packet == NULL) {
-            /* Could not get buffer element */
-            return;
+        if (packet == NULL)
+        {
+            packet = csp_buffer_get(256);
+            if (packet == NULL)
+            {
+                /* Could not get buffer element */
+                return;
+            }
         }
 
         /* Connect to host with regular UDP-like protocol and 100 ms timeout */
-        conn = csp_connect(CSP_PRIO_NORM, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
-        if (conn == NULL) {
+        conn = csp_connect(CSP_PRIO_CRITICAL, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
+        if (conn == NULL)
+        {
             /* Connect failed */
             /* Remember to free packet buffer */
             csp_buffer_free(packet);
@@ -74,13 +90,16 @@ CSP_DEFINE_TASK(task_csp_send)
         packet->length = strlen(msg);
 
         /* Send packet */
-        if (!csp_send(conn, packet, 100)) {
+        if (!csp_send(conn, packet, 100))
+        {
             /* Send failed */
             csp_buffer_free(packet);
         }
 
         /* Close connection */
         csp_close(conn);
+        /* free packet */
+        //csp_buffer_free(packet);
     }
 
     return CSP_TASK_RETURN;
@@ -103,14 +122,16 @@ CSP_DEFINE_TASK(task_csp_receive)
     csp_packet_t * packet;
 
     /* Process incoming connections */
-    while (1) {
+    while (1)
+    {
 
         /* Wait for connection, 100 ms timeout */
         if ((conn = csp_accept(sock, 100)) == NULL)
             continue;
 
         /* Read packets. Timout is 100 ms */
-        while ((packet = csp_read(conn, 100)) != NULL) {
+        while ((packet = csp_read(conn, 100)) != NULL)
+        {
             /* store packet data */
             xQueueSendToBack(receive_queue, (char *)packet->data, 0);
         }
@@ -130,6 +151,7 @@ k_csp_status k_csp_send(char * msg)
     status = xQueueSendToBack(send_queue, msg, 0);
     if (status == pdTRUE)
     {
+        blink(K_LED_RED);
         return K_CSP_OK;
     }
     else
@@ -146,10 +168,12 @@ k_csp_status k_csp_receive(char * msg)
     status = xQueueReceive(receive_queue, msg, 0);
     if (status == pdTRUE)
     {
+        blink(K_LED_GREEN);
         return K_CSP_OK;
     }
     else
     {
+        blink(K_LED_BLUE);
         return K_CSP_ERROR;
     }
 }
@@ -190,8 +214,8 @@ void k_init_csp(k_csp_driver driver)
 
     /* create csp threads to handle send and receive */
     csp_thread_handle_t handle_csp_send, handle_csp_receive;
-    csp_thread_create(task_csp_send, "CSP_SEND", configMINIMAL_STACK_SIZE*2, NULL, 2, &handle_csp_send);
-    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_receive);
+    csp_thread_create(task_csp_send, "CSP_SEND", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_send);
+    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE, NULL, 1, &handle_csp_receive);
 }
 
 void k_init_kiss_csp(void)
@@ -200,13 +224,14 @@ void k_init_kiss_csp(void)
     csp_kiss_init(&csp_if_kiss, &csp_kiss_driver, usart_putc, usart_insert, "KISS");
 
     /* Setup callback from USART RX to KISS RS */
-    void my_usart_rx(uint8_t * buf, int len, void * pxTaskWoken) {
+    void my_usart_rx(uint8_t * buf, int len, void * pxTaskWoken)
+    {
         csp_kiss_rx(&csp_if_kiss, buf, len, pxTaskWoken);
     }
     usart_set_callback(my_usart_rx);
 
     /* csp buffer and mtu in csp_iface must match */
-    csp_buffer_init(5, 256);
+    csp_buffer_init(10, 256);
     csp_init(MY_ADDRESS);
     /* set to route through KISS / UART */
     csp_route_set(TARGET_ADDRESS, &csp_if_kiss, CSP_NODE_MAC);
