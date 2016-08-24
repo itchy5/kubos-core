@@ -1,5 +1,5 @@
 /*
- * KubOS HAL
+ * KubOS Core Flight Services
  * Copyright (C) 2016 Kubos Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,10 +16,40 @@
  */
 
 /**
- * @defgroup KUBOSInterface
- * @addtogroup KUBOSInterface
+ * @defgroup CSP
+ * @addtogroup CSP
  * @{
  */
+
+/**
+ *
+ * @file       csp.h
+ * @brief KubOS CSP API
+ *
+ * Enabling this code requires certain configuration values to be present
+ * in the application's configuration json. An example is given below:
+ *
+ *{
+ *  "CSP": {
+ *   "my_address":"1",
+ *   "target_address":"1",
+ *   "my_port":"10",
+ *   "driver": {
+ *     "usart": {
+ *     },
+ *      "interface":"if_kiss"
+ *    },
+ *  "usart_bus": "K_UART6",
+ *  "max_msg_size":"32"
+ *  }
+ *}
+ *
+ * This would enable the CSP protocol and configure it for the usart K_UART6 bus
+ * over the KISS interface in loopback mode.
+ *
+ */
+
+#ifdef YOTTA_CFG_CSP
 
 #include <csp/csp.h>
 
@@ -39,7 +69,6 @@ typedef enum {
 typedef enum {
     K_CSP_OK = 0,
     K_CSP_ERROR,
-    K_CSP_TIMEOUT,
 } k_csp_status;
 
 /**
@@ -56,8 +85,7 @@ void k_init_kiss_csp(void);
 /**
  * Send a message string over CSP protocol
  * @param msg is the char pointer to message to send
- * @return k_csp_status, CSP_OK on success, CSP_ERROR on error, CSP_TIMEOUT on
- * timeout
+ * @return k_csp_status, CSP_OK on success, CSP_ERROR on error
  */
 k_csp_status k_csp_send(char * msg);
 
@@ -66,4 +94,6 @@ k_csp_status k_csp_send(char * msg);
  * @param packet is the pointer to the received CSP packet
  * @return k_csp_status, CSP_OK on success, CSP_ERROR on error
  */
-k_csp_status k_csp_receive(csp_packet_t * packet);
+k_csp_status k_csp_receive(char * msg);
+
+#endif

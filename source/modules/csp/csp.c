@@ -1,5 +1,5 @@
 /*
- * KubOS HAL
+ * KubOS Core Flight Services
  * Copyright (C) 2016 Kubos Corporation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,14 +15,16 @@
  * limitations under the License.
  */
 
+#ifdef YOTTA_CFG_CSP
+
 #include "FreeRTOS.h"
 #include "task.h"
 #include "timers.h"
 #include "queue.h"
 
+#include <stdlib.h>
 
 #include <csp/drivers/usart.h>
-#include <stdlib.h>
 #include <csp/interfaces/csp_if_kiss.h>
 #include <csp/arch/csp_thread.h>
 
@@ -32,21 +34,19 @@
 static csp_iface_t csp_if_kiss;
 static csp_kiss_handle_t csp_kiss_driver;
 
-static xQueueHandle packet_queue;
-static xQueueHandle msg_queue;
+static xQueueHandle receive_queue;
+static xQueueHandle send_queue;
 
 CSP_DEFINE_TASK(task_csp_send)
 {
     csp_packet_t * packet;
     csp_conn_t * conn;
     portBASE_TYPE status;
-    char * msg; /* msg pointer */
+    char msg[YOTTA_CFG_CSP_MAX_MSG_SIZE]; /* static msg */
 
-    /**
-     * Try data packet to server
-     */
     while (1) {
-        status = xQueueReceive(msg_queue, &msg, portMAX_DELAY);
+        /* get msg from send queue */
+        status = xQueueReceive(send_queue, msg, portMAX_DELAY);
         if (status != pdTRUE) {
             continue;
         }
@@ -58,7 +58,7 @@ CSP_DEFINE_TASK(task_csp_send)
             return;
         }
 
-        /* Connect to host HOST, port PORT with regular UDP-like protocol and 100 ms timeout */
+        /* Connect to host with regular UDP-like protocol and 100 ms timeout */
         conn = csp_connect(CSP_PRIO_NORM, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
         if (conn == NULL) {
             /* Connect failed */
@@ -79,8 +79,6 @@ CSP_DEFINE_TASK(task_csp_send)
             csp_buffer_free(packet);
         }
 
-        /* success */
-        //blink(K_LED_RED);
         /* Close connection */
         csp_close(conn);
     }
@@ -97,8 +95,8 @@ CSP_DEFINE_TASK(task_csp_receive)
     /* Bind all ports to socket */
     csp_bind(sock, CSP_ANY);
 
-    /* Create 10 connections backlog queue */
-    csp_listen(sock, 10);
+    /* Create connections backlog queue */
+    csp_listen(sock, YOTTA_CFG_CSP_MAX_MSG_WAITING);
 
     /* Pointer to current connection and packet */
     csp_conn_t * conn;
@@ -113,15 +111,12 @@ CSP_DEFINE_TASK(task_csp_receive)
 
         /* Read packets. Timout is 100 ms */
         while ((packet = csp_read(conn, 100)) != NULL) {
-            /* store packet */
-            xQueueSendToBack(packet_queue, packet, 0);
-            /* success */
-            //blink(K_LED_GREEN);
+            /* store packet data */
+            xQueueSendToBack(receive_queue, (char *)packet->data, 0);
         }
 
         /* Close current connection, and handle next */
         csp_close(conn);
-
     }
 
     return CSP_TASK_RETURN;
@@ -131,10 +126,11 @@ k_csp_status k_csp_send(char * msg)
 {
     portBASE_TYPE status;
 
-    status = xQueueSendToBack(msg_queue, msg, 0);
+    /* put user msg at end of queue */
+    status = xQueueSendToBack(send_queue, msg, 0);
     if (status == pdTRUE)
     {
-        K_CSP_OK;
+        return K_CSP_OK;
     }
     else
     {
@@ -142,13 +138,15 @@ k_csp_status k_csp_send(char * msg)
     }
 }
 
-k_csp_status k_csp_receive(csp_packet_t * packet)
+k_csp_status k_csp_receive(char * msg)
 {
     portBASE_TYPE status;
-    status = xQueueReceive(packet_queue, packet, portMAX_DELAY);
+
+    /* get the msg from queue */
+    status = xQueueReceive(receive_queue, msg, 0);
     if (status == pdTRUE)
     {
-        K_CSP_OK;
+        return K_CSP_OK;
     }
     else
     {
@@ -179,16 +177,16 @@ void k_init_csp(k_csp_driver driver)
         default: /* NONE */
         {
             /* on-board */
-            csp_buffer_init(5, 100);
+            csp_buffer_init(5, 256);
             csp_init(MY_ADDRESS);
             csp_route_start_task(500, 1);
         }
     }
 
-    /* create queue to store received packets */
-    packet_queue = xQueueCreate(10, sizeof(csp_packet_t));
+    /* create queue to store received data */
+    receive_queue = xQueueCreate(YOTTA_CFG_CSP_MAX_MSG_WAITING, YOTTA_CFG_CSP_MAX_MSG_SIZE);
     /* create queue for messages to be sent */
-    packet_queue = xQueueCreate(10, YOTTA_CFG_CSP_MAX_MSG_SIZE);
+    send_queue = xQueueCreate(YOTTA_CFG_CSP_MAX_MSG_WAITING, YOTTA_CFG_CSP_MAX_MSG_SIZE);
 
     /* create csp threads to handle send and receive */
     csp_thread_handle_t handle_csp_send, handle_csp_receive;
@@ -214,3 +212,5 @@ void k_init_kiss_csp(void)
     csp_route_set(TARGET_ADDRESS, &csp_if_kiss, CSP_NODE_MAC);
     csp_route_start_task(500, 1);
 }
+
+#endif
