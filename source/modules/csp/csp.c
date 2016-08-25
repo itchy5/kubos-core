@@ -53,6 +53,17 @@ CSP_DEFINE_TASK(task_csp_send)
     portBASE_TYPE status;
     char msg[YOTTA_CFG_CSP_MAX_MSG_SIZE]; /* static msg */
 
+    /**
+     * Try ping
+     */
+
+    csp_sleep_ms(200);
+
+    int result = csp_ping(TARGET_ADDRESS, 100, 10, CSP_O_NONE);
+    if (result) {
+    blink(K_LED_ORANGE);
+    }
+
     while (1)
     {
         /* get msg from send queue */
@@ -66,15 +77,14 @@ CSP_DEFINE_TASK(task_csp_send)
         if (packet == NULL)
         {
             packet = csp_buffer_get(256);
-            if (packet == NULL)
-            {
+            if (packet == NULL) {
                 /* Could not get buffer element */
                 return;
             }
         }
 
         /* Connect to host with regular UDP-like protocol and 100 ms timeout */
-        conn = csp_connect(CSP_PRIO_CRITICAL, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
+        conn = csp_connect(CSP_PRIO_NORM, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
         if (conn == NULL)
         {
             /* Connect failed */
@@ -98,8 +108,6 @@ CSP_DEFINE_TASK(task_csp_send)
 
         /* Close connection */
         csp_close(conn);
-        /* free packet */
-        //csp_buffer_free(packet);
     }
 
     return CSP_TASK_RETURN;
@@ -124,7 +132,6 @@ CSP_DEFINE_TASK(task_csp_receive)
     /* Process incoming connections */
     while (1)
     {
-
         /* Wait for connection, 100 ms timeout */
         if ((conn = csp_accept(sock, 100)) == NULL)
             continue;
@@ -132,8 +139,21 @@ CSP_DEFINE_TASK(task_csp_receive)
         /* Read packets. Timout is 100 ms */
         while ((packet = csp_read(conn, 100)) != NULL)
         {
-            /* store packet data */
-            xQueueSendToBack(receive_queue, (char *)packet->data, 0);
+            switch (csp_conn_dport(conn))
+            {
+                case MY_PORT:
+                    /* Process packet here */
+                    /* store packet data */
+                    xQueueSendToBack(receive_queue, (char *)packet->data, 0);
+                    csp_buffer_free(packet);
+                    break;
+
+                default:
+                    /* Let the service handler reply pings, buffer use, etc. */
+                    blink(K_LED_BLUE);
+                    csp_service_handler(conn, packet);
+                    break;
+            }
         }
 
         /* Close current connection, and handle next */
@@ -173,7 +193,6 @@ k_csp_status k_csp_receive(char * msg)
     }
     else
     {
-        blink(K_LED_BLUE);
         return K_CSP_ERROR;
     }
 }
@@ -201,7 +220,7 @@ void k_init_csp(k_csp_driver driver)
         default: /* NONE */
         {
             /* on-board */
-            csp_buffer_init(5, 256);
+            csp_buffer_init(10, 256);
             csp_init(MY_ADDRESS);
             csp_route_start_task(500, 1);
         }
@@ -215,7 +234,7 @@ void k_init_csp(k_csp_driver driver)
     /* create csp threads to handle send and receive */
     csp_thread_handle_t handle_csp_send, handle_csp_receive;
     csp_thread_create(task_csp_send, "CSP_SEND", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_send);
-    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE, NULL, 1, &handle_csp_receive);
+    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_receive);
 }
 
 void k_init_kiss_csp(void)
