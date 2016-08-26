@@ -230,7 +230,7 @@ void k_init_csp(k_csp_driver driver)
         default: /* NONE */
         {
             /* on-board */
-            csp_buffer_init(10, 256);
+            csp_buffer_init(5, 256);
             csp_init(MY_ADDRESS);
             csp_route_start_task(500, 1);
         }
@@ -243,8 +243,8 @@ void k_init_csp(k_csp_driver driver)
 
     /* create csp threads to handle send and receive */
     csp_thread_handle_t handle_csp_send, handle_csp_receive;
-    csp_thread_create(task_csp_send, "CSP_SEND", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_send);
-    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE, NULL, 2, &handle_csp_receive);
+    csp_thread_create(task_csp_send, "CSP_SEND", configMINIMAL_STACK_SIZE*2, NULL, 2, &handle_csp_send);
+    csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE*2, NULL, 2, &handle_csp_receive);
 }
 
 void k_init_kiss_csp(void)
@@ -260,7 +260,7 @@ void k_init_kiss_csp(void)
     usart_set_callback(my_usart_rx);
 
     /* csp buffer and mtu in csp_iface must match */
-    csp_buffer_init(10, 256);
+    csp_buffer_init(5, 256);
     csp_init(MY_ADDRESS);
     /* set to route through KISS / UART */
     csp_route_set(TARGET_ADDRESS, &csp_if_kiss, CSP_NODE_MAC);
