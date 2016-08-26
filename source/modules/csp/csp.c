@@ -61,7 +61,12 @@ CSP_DEFINE_TASK(task_csp_send)
 
     int result = csp_ping(TARGET_ADDRESS, 100, 10, CSP_O_NONE);
     if (result) {
-    blink(K_LED_ORANGE);
+        #ifdef TARGET_LIKE_STM32
+        blink(K_LED_ORANGE);
+        #else
+        blink(K_LED_GREEN);
+        blink(K_LED_RED);
+        #endif
     }
 
     while (1)
@@ -150,7 +155,12 @@ CSP_DEFINE_TASK(task_csp_receive)
 
                 default:
                     /* Let the service handler reply pings, buffer use, etc. */
+                    #ifdef TARGET_LIKE_STM32
                     blink(K_LED_BLUE);
+                    #else
+                    blink(K_LED_RED);
+                    blink(K_LED_GREEN);
+                    #endif
                     csp_service_handler(conn, packet);
                     break;
             }
