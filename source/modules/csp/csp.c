@@ -44,7 +44,7 @@ CSP_DEFINE_TASK(task_csp_send)
     csp_packet_t * packet = NULL;
     csp_conn_t * conn;
     portBASE_TYPE status;
-    char msg[YOTTA_CFG_CSP_MAX_MSG_SIZE]; /* static msg */
+    k_csp_msg_t msg;
 
     /**
      * ping
@@ -55,7 +55,7 @@ CSP_DEFINE_TASK(task_csp_send)
     while (1)
     {
         /* get msg from send queue */
-        status = xQueueReceive(send_queue, msg, portMAX_DELAY);
+        status = xQueueReceive(send_queue, &msg, portMAX_DELAY);
         if (status != pdTRUE)
         {
             continue;
@@ -83,10 +83,10 @@ CSP_DEFINE_TASK(task_csp_send)
         }
 
         /* Copy data to packet */
-        strcpy((char *) packet->data, msg);
+        strncpy((char *) packet->data, msg.data, msg.size);
 
         /* Set packet length */
-        packet->length = strlen(msg);
+        packet->length = msg.size;
 
         /* Send packet */
         if (!csp_send(conn, packet, 100))
@@ -151,22 +151,26 @@ CSP_DEFINE_TASK(task_csp_receive)
     return CSP_TASK_RETURN;
 }
 
-k_csp_status k_csp_send(char * msg, unsigned int size)
+k_csp_status k_csp_send(char * data, unsigned int size)
 {
     portBASE_TYPE status;
-
+    k_csp_msg_t msg;
     /* check if valid string */
-    if (msg == NULL)
+    if (data == NULL)
     {
         return K_CSP_ERROR;
     }
     /* check msg integrity */
-    if (strlen(msg) != size || size > YOTTA_CFG_CSP_MAX_MSG_SIZE)
+    if (size > YOTTA_CFG_CSP_MAX_MSG_SIZE)
     {
         return K_CSP_ERROR;
     }
+    /* add to msg struct */
+    msg.data = data;
+    msg.size = size;
+
     /* put user msg at end of queue */
-    status = xQueueSendToBack(send_queue, msg, 0);
+    status = xQueueSendToBack(send_queue, &msg, 0);
     if (status == pdTRUE)
     {
         return K_CSP_OK;
@@ -197,18 +201,18 @@ void k_init_csp(k_csp_driver driver)
 {
     switch(driver)
     {
-        case if_kiss:
+        case IF_KISS:
         {
             usart_init_default();
             k_init_kiss_csp();
             break;
         }
-        case if_i2c:
+        case IF_I2C:
         {
             /* I2C init function goes here */
             break;
         }
-        case if_can:
+        case IF_CAN:
         {
             /* CAN init function goes here */
             break;

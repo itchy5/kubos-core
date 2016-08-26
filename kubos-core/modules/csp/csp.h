@@ -64,9 +64,9 @@
 
 /* different driver types */
 typedef enum {
-    if_kiss = 0,
-    if_i2c,
-    if_can,
+    IF_KISS = 0,
+    IF_I2C,
+    IF_CAN,
 } k_csp_driver;
 
 /* csp status values */
@@ -74,6 +74,12 @@ typedef enum {
     K_CSP_OK = 0,
     K_CSP_ERROR,
 } k_csp_status;
+
+/* csp data struct */
+typedef struct {
+    char * data;
+    unsigned int size;
+} k_csp_msg_t;
 
 /**
  * choose driver to use and init csp routing
@@ -93,11 +99,11 @@ void usart_init_default(void);
 
 /**
  * Send a message string over CSP protocol
- * @param msg is the char pointer to message to send
+ * @param data is the char pointer to data to send
  * @param size is the size of the msg to send
  * @return k_csp_status, CSP_OK on success, CSP_ERROR on error
  */
-k_csp_status k_csp_send(char * msg, unsigned int size);
+k_csp_status k_csp_send(char * data, unsigned int size);
 
 /**
  * Receive a CSP packet
