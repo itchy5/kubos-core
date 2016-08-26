@@ -30,6 +30,7 @@
 
 #include "kubos-core/modules/csp/csp.h"
 #include "kubos-hal/gpio.h"
+#include "kubos-hal/uart.h"
 
 /* static CSP interfaces */
 static csp_iface_t csp_if_kiss;
@@ -37,14 +38,6 @@ static csp_kiss_handle_t csp_kiss_driver;
 
 static xQueueHandle receive_queue;
 static xQueueHandle send_queue;
-
-#define BLINK_MS 100
-static inline void blink(int pin)
-{
-    k_gpio_write(pin, 1);
-    vTaskDelay(BLINK_MS / portTICK_RATE_MS);
-    k_gpio_write(pin, 0);
-}
 
 CSP_DEFINE_TASK(task_csp_send)
 {
@@ -54,20 +47,10 @@ CSP_DEFINE_TASK(task_csp_send)
     char msg[YOTTA_CFG_CSP_MAX_MSG_SIZE]; /* static msg */
 
     /**
-     * Try ping
+     * ping
      */
-
     csp_sleep_ms(200);
-
-    int result = csp_ping(TARGET_ADDRESS, 100, 10, CSP_O_NONE);
-    if (result) {
-        #ifdef TARGET_LIKE_STM32
-        blink(K_LED_ORANGE);
-        #else
-        blink(K_LED_GREEN);
-        blink(K_LED_RED);
-        #endif
-    }
+    csp_ping(TARGET_ADDRESS, YOTTA_CFG_CSP_TIMEOUT, 10, CSP_O_NONE);
 
     while (1)
     {
@@ -81,21 +64,22 @@ CSP_DEFINE_TASK(task_csp_send)
         /* Get packet buffer for data */
         if (packet == NULL)
         {
-            packet = csp_buffer_get(256);
-            if (packet == NULL) {
+            packet = csp_buffer_get(YOTTA_CFG_CSP_BUFFER_SIZE);
+            if (packet == NULL)
+            {
                 /* Could not get buffer element */
-                return;
+                continue;
             }
         }
 
-        /* Connect to host with regular UDP-like protocol and 100 ms timeout */
-        conn = csp_connect(CSP_PRIO_NORM, TARGET_ADDRESS, MY_PORT, 100, CSP_O_NONE);
+        /* Connect to host with regular UDP-like protocol and configurable timeout */
+        conn = csp_connect(CSP_PRIO_NORM, TARGET_ADDRESS, MY_PORT, YOTTA_CFG_CSP_TIMEOUT, CSP_O_NONE);
         if (conn == NULL)
         {
             /* Connect failed */
             /* Remember to free packet buffer */
             csp_buffer_free(packet);
-            return;
+            continue;
         }
 
         /* Copy data to packet */
@@ -137,12 +121,12 @@ CSP_DEFINE_TASK(task_csp_receive)
     /* Process incoming connections */
     while (1)
     {
-        /* Wait for connection, 100 ms timeout */
-        if ((conn = csp_accept(sock, 100)) == NULL)
+        /* Wait for connection, configurable timeout */
+        if ((conn = csp_accept(sock, YOTTA_CFG_CSP_TIMEOUT)) == NULL)
             continue;
 
-        /* Read packets. Timout is 100 ms */
-        while ((packet = csp_read(conn, 100)) != NULL)
+        /* Read packets. Timout is configurable */
+        while ((packet = csp_read(conn, YOTTA_CFG_CSP_TIMEOUT)) != NULL)
         {
             switch (csp_conn_dport(conn))
             {
@@ -155,12 +139,6 @@ CSP_DEFINE_TASK(task_csp_receive)
 
                 default:
                     /* Let the service handler reply pings, buffer use, etc. */
-                    #ifdef TARGET_LIKE_STM32
-                    blink(K_LED_BLUE);
-                    #else
-                    blink(K_LED_RED);
-                    blink(K_LED_GREEN);
-                    #endif
                     csp_service_handler(conn, packet);
                     break;
             }
@@ -173,15 +151,24 @@ CSP_DEFINE_TASK(task_csp_receive)
     return CSP_TASK_RETURN;
 }
 
-k_csp_status k_csp_send(char * msg)
+k_csp_status k_csp_send(char * msg, unsigned int size)
 {
     portBASE_TYPE status;
 
+    /* check if valid string */
+    if (msg == NULL)
+    {
+        return K_CSP_ERROR;
+    }
+    /* check msg integrity */
+    if (strlen(msg) != size || size > YOTTA_CFG_CSP_MAX_MSG_SIZE)
+    {
+        return K_CSP_ERROR;
+    }
     /* put user msg at end of queue */
     status = xQueueSendToBack(send_queue, msg, 0);
     if (status == pdTRUE)
     {
-        blink(K_LED_RED);
         return K_CSP_OK;
     }
     else
@@ -198,7 +185,6 @@ k_csp_status k_csp_receive(char * msg)
     status = xQueueReceive(receive_queue, msg, 0);
     if (status == pdTRUE)
     {
-        blink(K_LED_GREEN);
         return K_CSP_OK;
     }
     else
@@ -230,7 +216,7 @@ void k_init_csp(k_csp_driver driver)
         default: /* NONE */
         {
             /* on-board */
-            csp_buffer_init(5, 256);
+            csp_buffer_init(YOTTA_CFG_CSP_BUFFERS, YOTTA_CFG_CSP_BUFFER_SIZE);
             csp_init(MY_ADDRESS);
             csp_route_start_task(500, 1);
         }
@@ -247,6 +233,23 @@ void k_init_csp(k_csp_driver driver)
     csp_thread_create(task_csp_receive, "CSP_RECIEVE", configMINIMAL_STACK_SIZE*2, NULL, 2, &handle_csp_receive);
 }
 
+void usart_init_default(void)
+{
+    /* set default device as char */
+    char dev = (char)YOTTA_CFG_CSP_USART_BUS;
+
+    struct usart_conf conf = {
+        .device = &dev, /* pointer to device */
+        .baudrate = YOTTA_CFG_HARDWARE_UARTDEFAULTS_BAUDRATE,
+        .databits = YOTTA_CFG_HARDWARE_UARTDEFAULTS_WORDLEN,
+        .stopbits = YOTTA_CFG_HARDWARE_UARTDEFAULTS_STOPBITS,
+        .paritysetting = YOTTA_CFG_HARDWARE_UARTDEFAULTS_PARITY,
+    };
+
+    /* initialize */
+    usart_init(&conf);
+}
+
 void k_init_kiss_csp(void)
 {
     /* init kiss interface */
@@ -260,7 +263,7 @@ void k_init_kiss_csp(void)
     usart_set_callback(my_usart_rx);
 
     /* csp buffer and mtu in csp_iface must match */
-    csp_buffer_init(5, 256);
+    csp_buffer_init(YOTTA_CFG_CSP_BUFFERS, YOTTA_CFG_CSP_BUFFER_SIZE);
     csp_init(MY_ADDRESS);
     /* set to route through KISS / UART */
     csp_route_set(TARGET_ADDRESS, &csp_if_kiss, CSP_NODE_MAC);

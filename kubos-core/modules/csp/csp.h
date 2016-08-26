@@ -41,7 +41,10 @@
  *    },
  *  "usart_bus": "K_UART6",
  *  "max_msg_size":"32",
- *  "max_msg_waiting":"10"
+ *  "max_msg_waiting":"10",
+ *  "timeout":"100",
+ *  "buffers":"5",
+ *  "buffer_size":"100"
  *  }
  *}
  *
@@ -84,11 +87,17 @@ void k_init_csp(k_csp_driver driver);
 void k_init_kiss_csp(void);
 
 /**
+ * Initialize USART with the default config
+ */
+void usart_init_default(void);
+
+/**
  * Send a message string over CSP protocol
  * @param msg is the char pointer to message to send
+ * @param size is the size of the msg to send
  * @return k_csp_status, CSP_OK on success, CSP_ERROR on error
  */
-k_csp_status k_csp_send(char * msg);
+k_csp_status k_csp_send(char * msg, unsigned int size);
 
 /**
  * Receive a CSP packet
